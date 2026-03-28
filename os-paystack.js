@@ -3,7 +3,7 @@ class OsPay {
   	
     if (!key) throw new Error("Missing API key");
     this.key = key;
-    this.baseUrl = location.href.match(/localhost/) ? "http://localhost:8080/paystack/api": "https://www.oshobby.com.ng/paystack/api";
+    this.baseUrl = location.href.match(/localhosht/) ? "http://localhost:8080/paystack/api": "https://www.oshobby.com.ng/paystack/api";
   }
 
   // Main checkout function
