@@ -345,7 +345,7 @@ function OsLazyPaystackFormBuild() {
                 const options = {
                     key: getData('key'),
                     title: split(getData('title')),
-                    logo: split(getData('logo', 'logo.jpg')),
+                    logo: split(getData('logo', 'https://via.placeholder.com/300x200?text=Os')),
                     amount: split(getData('amount')),
                     amountLabel: split(getData('amountLabel', 'Amount (₦)')),
                     email: split(getData('email')),
