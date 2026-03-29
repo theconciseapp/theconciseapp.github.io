@@ -3,12 +3,13 @@ class OsPay {
   	
     if (!key) throw new Error("Missing API key");
     this.key = key;
-    this.baseUrl = location.href.match(/localhosht/) ? "http://localhost:8080/paystack/api": "https://www.oshobby.com.ng/paystack/api";
+    this.baseUrl = sessionStorage.getItem('OsPaystackLocal')||"https://www.oshobby.com.ng/paystack/api";
   }
 
   // Main checkout function
   async checkout(options) {
     try {
+    	
       if (!options.email) throw new Error("Missing Email");
       if (+options.amount < 50) throw new Error("Minimum amount is ₦50");
 
@@ -22,6 +23,13 @@ headers["X-Auth-Token"] =this.key
    }else{
    	options.token=this.key;
 }
+
+
+ const checkService=await this.isReallyOnline();
+ 
+ if(!checkService){
+  	throw new Error('Service is unavailable');
+  }
 
       const res = await fetch(`${this.baseUrl}/initialize`, {
         method: "POST",
@@ -42,7 +50,7 @@ headers["X-Auth-Token"] =this.key
     throw new Error(result.message||"Unknown error");
 
     } catch (err) {
-      options.onError ? options.onError(err) : OsToast(err);
+      options.onError ? options.onError(err) : OsToast(err.message);
     } finally{
     	options.always && options.always();
     }
@@ -129,11 +137,38 @@ async verify(ref, callback){
     }catch(err){
     	callback(null, err);
     }
-      }      
+  }    
+
+async isReallyOnline() {
+  const controller = new AbortController();
+
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, 3000); // 3 seconds
+
+  try {
+  const res= await fetch(`${this.baseUrl.replace('/api','')}/ping.php`, {
+      method: 'HEAD',
+      cache: 'no-store',
+      signal: controller.signal
+    });
+
+if (!res.ok) { // 404, 500, etc.
+      // Treat as offline/unreachable
+      return false;
+    }
+
+    clearTimeout(timeout);
+    return true;
+  } catch {
+    return false;
+  }
+}
+  
 }
 
 
-class OsLazyPaystack {
+class OsLazyPaystackForm {
 
     constructor(selector = '.OsLazyPaystackForm') {
         this.selector = selector;
@@ -208,6 +243,10 @@ document.addEventListener('input', (e) => {
 
             const popup = new OsPay(key);
 
+if (!navigator.onLine) {
+ throw new Error("You're offline. Check your internet connection.");
+}
+
             popup.checkout({
                 email,
                 amount,
@@ -238,35 +277,64 @@ this.showMessage(form, 'Payment successful', 'success');
      this.showMessage(form, msg, 'info');
 },
                onError: (error) => {
-                    this.showMessage(form,error);
+                    this.showMessage(form,error.message);
                     this.emit(form, 'payment_error', {form, error});
                 },
                 always: () => {
-                    this.cleanup(btn);
+                    this.cleanup(false, btn);
                 }
             });
 
         } catch (e) {
-            OsToast(e.message);
-            this.cleanup(btn);
+       
+            this.showMessage(form, e.message);
+           
+ this.cleanup(form, btn);
         }
     }
 
     fail(form, message, btn) {
+    	
         this.showMessage(form, message);
-        this.cleanup(btn);
+        this.cleanup(false, btn);
     }
 
- showMessage(form, message, type="danger"){
+ showMessage(form, msg, type="danger"){
+ 	let message = msg;
+ 
+ try{
+ 	
+  if (msg.startsWith('TypeError')) {
+    // Network-level error
+    message = "Unable to connect. Check your internet or try again.";
+  }
+
+  if ( msg.startsWith('HTTP_')) {
+    const status = parseInt(msg.message.split('_')[1]);
+
+    if (status >= 500) {
+      message = "Server error. Please try again later.";
+    } else if (status === 404) {
+      message = "Service not found.";
+    } else if (status === 401 || status === 403) {
+      message = "Unauthorized request.";
+    } else if (status === 400) {
+      message = "Invalid request.";
+    }   
+  }
+
    OsToast(message, type);
-   
+   }catch(e){ alert( e); }
  	form.querySelector('.message').innerHTML=`<div class="alert alert-${type}">${message}</div>`;
  }
 
-    cleanup(btn) {
-        const msg = document.getElementById('msg');
-        if (msg) msg.innerHTML = '';
-        if (btn) btn.disabled = false;
+    cleanup(form, btn) {
+      if( form){
+      	
+ const msg=form.querySelector('.message');
+        msg.innerHTML = '';
+        }
+        if (btn) btn.disabled = false;      
     }
 
     // Custom event emitter (very useful)
@@ -277,6 +345,8 @@ this.showMessage(form, 'Payment successful', 'success');
         }));
     }
     
+
+
     loadBootstrapCSS() {
     // prevent duplicate loading
     if (window.__oslazy_bootstrap_css) return;
@@ -297,10 +367,6 @@ this.showMessage(form, 'Payment successful', 'success');
     window.__oslazy_bootstrap_css = true;
   }     
 }
-
-
-new OsLazyPaystack();
-
 
 function OsLazyPaystackFormBuild() {
 
@@ -335,7 +401,8 @@ function OsLazyPaystackFormBuild() {
         }
 
         osLazyPaystack.forEach((el, pos) => {
-
+    if( el.classList.contains('built')) return;
+    
             try {
 
                 const getData = (attr, fallback = '') =>(el.dataset[attr] || fallback);
@@ -343,9 +410,9 @@ function OsLazyPaystackFormBuild() {
                 const split = (val) => val.toString().split('|');
 
                 const options = {
-                    key: getData('key'),
+                    key: split(getData('key')),
                     title: split(getData('title')),
-                    logo: split(getData('logo', 'https://dummyimage.com/600x400/000/fff&text=Os')),
+                    logo: split(getData('logo', 'https://dummyimage.com/600x400/0079c6/fff&text=Os')),
                     amount: split(getData('amount')),
                     amountLabel: split(getData('amountLabel', 'Amount (₦)')),
                     email: split(getData('email')),
@@ -353,36 +420,36 @@ function OsLazyPaystackFormBuild() {
                     fullname: split(getData('fullname', '|required')),
                     fullnameLabel: split(getData('fullnameLabel', 'Full name')),
                     submit: split(getData('submitBtn', 'Pay Now')),
-                    successUrl: getData('successUrl'),
-                    failUrl: getData('failUrl'),
+                    successUrl: split(getData('successUrl')),
+                    failUrl: split(getData('failUrl')),
                 };
 
                 const has = (arr, val) => arr.includes(val);
 
-                const customFields = el.innerHTML;
+                const customFields = el.innerHTML.replace(/<os-loader.*>.*<\/os-loader>/,'');
 
-                const osLazyForm = `
+  const osLazyForm = `
                 <div class="container my-2">
                     <div class="card OsLazyPaystack-checkout-card shadow p-4">
 
-                        <div class="OsLazyPaystack-logo-container">
+                        <div class="OsLazyPaystack-logo-container ${options.logo.join(' ').match(/c:([^\s]+)/)?.[1]||''}">
                             <img src="${options.logo[0]}">
                         </div>
 
-                        <h4 class="text-center mb-3">${options.title[0]}</h4>
+                        <h4 class="text-center mb-3 ${options.title.join(' ').match(/c:([^\s]+)/)?.[1]||''}">${options.title[0]}</h4>
 
-                        <form class="OsLazyPaystackForm needs-validation" data-key="${options.key}" novalidate>
+                        <form class="OsLazyPaystackForm needs-validation" data-key="${options.key[0]}" novalidate>
 
                             <!-- Fullname -->
                             <div class="mb-3 ${has(options.fullname, 'hide') ? 'd-none' : ''}">
                                 <label>${options.fullnameLabel[0]}</label>
                                 <input type="text"
-                                    class="form-control OsLazyPaystack-fullname"
+                                    class="form-control OsLazyPaystack-fullname ${options.fullname.join(' ').match(/c:([^\s]+)/)?.[1]||''}"
                                     name="fullname"
                                     id="OsLazyPaystack-fullname-${pos}"
                                     value="${options.fullname[0]}"
                                     ${has(options.fullname, 'required') ? 'required minlength="4"' : ''}
-                                    ${has(options.fullname, 'fixed') ? 'readonly' : ''}>
+                                    ${has(options.fullname, 'readonly') ? 'readonly' : ''}>
                                 <div class="invalid-feedback">Enter your full name</div>
                             </div>
 
@@ -390,12 +457,12 @@ function OsLazyPaystackFormBuild() {
                             <div class="mb-3 ${has(options.email, 'hide') ? 'd-none' : ''}">
                                 <label>${options.emailLabel[0]}</label>
                                 <input type="email"
-                                    class="form-control OsLazyPaystack-email"
+                                    class="form-control OsLazyPaystack-email ${options.email.join(' ').match(/c:([^\s]+)/)?.[1]||''}"
                                     name="email"
                                     id="OsLazyPaystack-email-${pos}"
                                     value="${options.email[0]}"
                                     required
-                                    ${has(options.email, 'fixed') ? 'readonly' : ''}>
+                                    ${has(options.email, 'readonly') ? 'readonly' : ''}>
                                 <div class="invalid-feedback">Enter a valid email address</div>
                             </div>
 
@@ -403,13 +470,13 @@ function OsLazyPaystackFormBuild() {
                             <div class="mb-3 ${has(options.amount, 'hide') ? 'd-none' : ''}">
                                 <label>${options.amountLabel[0]}</label>
                                 <input type="number"
-                                    class="form-control OsLazyPaystack-amount"
+                                    class="form-control OsLazyPaystack-amount ${options.amount.join(' ').match(/c:([^\s]+)/)?.[1]||''}"
                                     name="amount"
                                     id="OsLazyPaystack-amount-${pos}"
                                     required
                                     min="50"
                                     value="${options.amount[0]}"
-                                    ${has(options.amount, 'fixed') ? 'readonly' : ''}>
+                                    ${has(options.amount, 'readonly') ? 'readonly' : ''}>
                                 <div class="invalid-feedback">Minimum amount is ₦50</div>
                             </div>
 
@@ -420,8 +487,8 @@ function OsLazyPaystackFormBuild() {
                             <!-- Message -->
                             <div class="mt-3 message text-center"></div>
 
-                            <input class="OsLazyPaystack-success-url" type="hidden" value="${options.successUrl}">
-                            <input class="OsLazyPaystack-fail-url" type="hidden" value="${options.failUrl}">
+                            <input class="OsLazyPaystack-success-url" type="hidden" value="${options.successUrl[0]}">
+                            <input class="OsLazyPaystack-fail-url" type="hidden" value="${options.failUrl[0]}">
 
                             <!-- Submit -->
                             <button type="submit" class="btn btn-${options.submit[1] || 'success'} w-100">
@@ -429,14 +496,15 @@ function OsLazyPaystackFormBuild() {
                             </button>
 
                         </form>
-                      <div class="text-center mt-3"><small>Powered by Os | Paystack</small></div>  
+                      <div class="text-center mt-3 OsPaystackLocal"><small>Powered by Os | Paystack</small></div>  
                     </div>
                                      
                 </div>
                 `;
 
-                el.innerHTML = osLazyForm;
-
+     el.innerHTML = osLazyForm;
+ 
+       el.classList.add('built');
             } catch (e) {
                 OsToast(e.message);
             }
@@ -496,6 +564,70 @@ function OsToast(message, type = "danger") {
 }
 
 
+(function () {
+  function boot() {
+    new OsLazyPaystackForm();
+    
+    sessionStorage.removeItem('OsPaystackLocal');
+   
+   let __osPLCnt=0;
+   let __osPLTimer=null;
+   
+    document.querySelector('.OsPaystackLocal').addEventListener('click', function(){
+    	__osPLCnt++;
+    
+    if( __osPLCnt>5){
+    sessionStorage.setItem('OsPaystackLocal', 'http://localhost:8080/paystack/api');
+    OsToast('Switched');
+    
+    // reset immediately after success
+      __osPLCnt = 0;
+      clearTimeout(__osPLTimer);
+    }
+    
+ clearTimeout(__osPLTimer);
+
+    __osPLTimer=setTimeout(function(){
+    	__osPLCnt=0;
+    }, 2000);
+ });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+})();
+
+const observer = new MutationObserver((mutations) => {
+  mutations.forEach((mutation) => {
+    mutation.addedNodes.forEach((node) => {
+      if (!(node instanceof Element)) return;
+
+      const targets = [];
+
+      if (node.matches('.OsLazyPaystack')) {
+        targets.push(node);
+      }
+
+      targets.push(...node.querySelectorAll?.('.OsLazyPaystack') || []);
+
+      targets.forEach((el) => {
+        if (el.classList.contains('built')) return;
+
+        const instance = new OsLazyPaystackForm();
+        instance.build(el);
+        el.classList.add('built');
+      });
+    });
+  });
+});
+
+observer.observe(document.body, {
+  childList: true,
+  subtree: true,
+});
 
 /*
 document.addEventListener('payment_close', function (e) {
