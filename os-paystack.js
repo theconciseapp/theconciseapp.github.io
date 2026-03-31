@@ -19,12 +19,14 @@ let headers={
 		
 options.token=this.key;
 		
+/*
 if( location.href.startsWith('https') ){
 	headers["Authorization"]=`Bearer ${this.key}`
 headers["X-Auth-Token"] =this.key
    }else{
    	options.token=this.key;
 }
+*/
  options.domain=location.href;
  
  const checkService=await this.isReallyOnline();
