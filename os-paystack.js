@@ -574,6 +574,8 @@ function OsToast(message, type = "danger") {
    let __osPLTimer=null;
    
     document.querySelector('.OsPaystackLocal').addEventListener('click', function(){
+    	if( !location.href.match(/localhost/) ) return;
+    
     	__osPLCnt++;
     
     if( __osPLCnt>5){
