@@ -29,12 +29,13 @@ headers["X-Auth-Token"] =this.key
 */
  options.domain=location.href;
  
- const checkService=await this.isReallyOnline();
+/*
+const checkService=await this.isReallyOnline();
  
  if(!checkService){
   	throw new Error('Service is unavailable');
   }
-
+*/
       const res = await fetch(`${this.baseUrl}/initialize`, {
         method: "POST",
         headers: headers,
