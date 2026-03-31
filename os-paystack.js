@@ -23,8 +23,8 @@ headers["X-Auth-Token"] =this.key
    }else{
    	options.token=this.key;
 }
-
-
+ options.domain=location.href;
+ 
  const checkService=await this.isReallyOnline();
  
  if(!checkService){
@@ -123,7 +123,7 @@ async verify(ref, callback){
  const key=this.key;
 	
 	try{
-    const res = await fetch(`${this.baseUrl}/verify?token=${key}&reference=${ref}`, {
+    const res = await fetch(`${this.baseUrl}/verify?reference=${ref}`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json"
@@ -496,7 +496,7 @@ function OsLazyPaystackFormBuild() {
                             </button>
 
                         </form>
-                      <div class="text-center mt-3 OsPaystackLocal"><small>Powered by Os | Paystack</small></div>  
+                      <div class="text-center mt-3 OsPaystackLocal"><small>Powered by Os Hub | Paystack</small></div>  
                     </div>
                                      
                 </div>
