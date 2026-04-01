@@ -16,10 +16,10 @@ class OsPay {
 let headers={
 	"Content-Type": "application/json"
 	}
-		
+
 options.token=this.key;
-		
-/*
+
+ /*
 if( location.href.startsWith('https') ){
 	headers["Authorization"]=`Bearer ${this.key}`
 headers["X-Auth-Token"] =this.key
@@ -27,10 +27,11 @@ headers["X-Auth-Token"] =this.key
    	options.token=this.key;
 }
 */
+
  options.domain=location.href;
  
 /*
-const checkService=await this.isReallyOnline();
+ const checkService=await this.isReallyOnline();
  
  if(!checkService){
   	throw new Error('Service is unavailable');
@@ -256,7 +257,6 @@ if (!navigator.onLine) {
                 email,
                 amount,
                 metadata,
-
                 onClose: (reference) => {
                     this.emit(form, 'payment_close', {form, reference} );
                    this.showMessage(form, 'Payment closed', 'info');
@@ -416,6 +416,7 @@ function OsLazyPaystackFormBuild() {
 
                 const options = {
                     key: split(getData('key')),
+                    reference: split(getData('reference')),
                     title: split(getData('title')),
                     logo: split(getData('logo', 'https://dummyimage.com/600x400/0079c6/fff&text=Os')),
                     amount: split(getData('amount')),
