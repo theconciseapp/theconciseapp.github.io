@@ -229,6 +229,7 @@ document.addEventListener('input', (e) => {
         this.showMessage(form, "Initializing payment...", "info");
 
         try {
+        	const custom_reference = metadata.reference || '';
             const email = metadata.email || '';
             const amount = Number(metadata.amount || 0);
 
@@ -244,7 +245,8 @@ document.addEventListener('input', (e) => {
 
             delete metadata.email;
             delete metadata.amount;
-
+            delete metadata.reference;
+            
             const key = form.dataset.key || '';
 
             const popup = new OsPay(key);
@@ -256,6 +258,7 @@ if (!navigator.onLine) {
             popup.checkout({
                 email,
                 amount,
+                reference: custom_reference,
                 metadata,
                 onClose: (reference) => {
                     this.emit(form, 'payment_close', {form, reference} );
@@ -492,7 +495,7 @@ function OsLazyPaystackFormBuild() {
 
                             <!-- Message -->
                             <div class="mt-3 message text-center"></div>
-
+      <input class="OsLazyPaystack-reference" name="reference" type="hidden" value="${options.reference[0]}">
                             <input class="OsLazyPaystack-success-url" type="hidden" value="${options.successUrl[0]}">
                             <input class="OsLazyPaystack-fail-url" type="hidden" value="${options.failUrl[0]}">
 
