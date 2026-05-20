@@ -6,6 +6,9 @@ class OsPay {
     this.baseUrl = sessionStorage.getItem('OsPaystackLocal')||"https://www.oshobby.com.ng/paystack/api";
   }
 
+   toast( msg, type='danger'){
+      	OsToast(msg, type);
+   }
   // Main checkout function
   async checkout(options) {
     try {
@@ -30,13 +33,10 @@ headers["X-Auth-Token"] =this.key
 
  options.domain=location.href;
  
-/*
- const checkService=await this.isReallyOnline();
- 
- if(!checkService){
-  	throw new Error('Service is unavailable');
-  }
-*/
+ if (!navigator.onLine) {
+ throw new Error("You're offline. Check your internet connection.");
+}
+
       const res = await fetch(`${this.baseUrl}/initialize`, {
         method: "POST",
         headers: headers,
@@ -93,32 +93,76 @@ headers["X-Auth-Token"] =this.key
   iframe.onload = () => {
     options.onLoad && options.onLoad(iframe);
   };
-
+    
     // Listen for postMessage events from iframe
-    const listener = async (event) => {
-      const { type, reference } = event.data || {};
-      if (!type) return;
+const listener = async (event) => {
 
-      switch(type) {
-        case "payment_successful":
-          await this._handleSuccess(reference, options);
-          break;
-        case "payment_cancelled":
-          options.onClose && options.onClose(reference, "Payment cancelled");
-          break;
-        case "payment_failed":
-          options.onFail && options.onFail( reference, "Payment failed");
-          break;
-        default:
-          OsToast("Unknown event from iframe:", JSON.stringify(event.data) );
-      }
-      // Close overlay after any event
-      document.body.removeChild(overlay);
-      window.removeEventListener("message", listener);
-    };
+  // Validate origin
+  const allowedOrigins = [
+ this.baseUrl.replace('/paystack/api','')
+];
 
-    window.addEventListener("message", listener);
+if (!allowedOrigins.includes(event.origin)) {
+  return;
+}
+
+  // Ensure data is object
+  if (!event.data || typeof event.data !== "object") {
+    return;
   }
+
+  const { type, reference } = event.data;
+
+  if (!type) return;
+
+  // Prevent duplicate events immediately
+  window.removeEventListener("message", listener);
+
+  try {
+
+    switch (type) {
+
+      case "payment_successful":
+        await this._handleSuccess(reference, options);
+        break;
+
+      case "payment_cancelled":
+        options.onClose?.(reference, "Payment cancelled");
+        break;
+
+      case "payment_failed":
+        options.onFail?.(reference, "Payment failed");
+        break;
+
+      default:
+        OsToast(
+          "Unknown event from iframe",
+          JSON.stringify(event.data)
+        );
+    }
+
+  } catch (error) {
+
+    console.error(error);
+
+    options.onFail?.(
+      reference,
+      error?.message || "An error occurred"
+    );
+
+  } finally {
+
+    // Safely remove overlay
+    if (overlay && overlay.parentNode) {
+      overlay.parentNode.removeChild(overlay);
+    }
+
+  }
+};
+
+window.addEventListener("message", listener);
+}
+    
 
   // Private: Verified
   async _handleSuccess(reference, options) {
@@ -229,6 +273,7 @@ document.addEventListener('input', (e) => {
         this.showMessage(form, "Initializing payment...", "info");
 
         try {
+        	const logoUrl = metadata.logoUrl || '';
         	const custom_reference = metadata.reference || '';
             const email = metadata.email || '';
             const amount = Number(metadata.amount || 0);
@@ -251,17 +296,19 @@ document.addEventListener('input', (e) => {
 
             const popup = new OsPay(key);
 
-if (!navigator.onLine) {
- throw new Error("You're offline. Check your internet connection.");
-}
-
             popup.checkout({
                 email,
                 amount,
                 reference: custom_reference,
                 metadata,
-                onClose: (reference) => {
+                onClose: (reference, message) => {
                     this.emit(form, 'payment_close', {form, reference} );
+                    const cUrl= form.querySelector('.OsLazyPaystack-cancel-url').value;
+           if( cUrl) {
+     location.href=cUrl + "?reference=" + reference;
+           return
+           }
+                    
                    this.showMessage(form, 'Payment closed', 'info');
                 },
       onSuccess: (reference) => {
@@ -271,6 +318,7 @@ if (!navigator.onLine) {
      location.href=sUrl + "?reference=" + reference;
            return
            }
+           
 this.showMessage(form, 'Payment successful', 'success');            
     },
 
@@ -293,16 +341,14 @@ this.showMessage(form, 'Payment successful', 'success');
                 }
             });
 
-        } catch (e) {
-       
+        } catch (e) {       
+        	
             this.showMessage(form, e.message);
-           
- this.cleanup(form, btn);
+            this.cleanup(form, btn);
         }
     }
 
     fail(form, message, btn) {
-    	
         this.showMessage(form, message);
         this.cleanup(false, btn);
     }
@@ -332,7 +378,9 @@ this.showMessage(form, 'Payment successful', 'success');
   }
 
    OsToast(message, type);
-   }catch(e){ alert( e); }
+   }catch(e){
+  OsToast( e.message); 
+}
  	form.querySelector('.message').innerHTML=`<div class="alert alert-${type}">${message}</div>`;
  }
 
@@ -421,7 +469,7 @@ function OsLazyPaystackFormBuild() {
                     key: split(getData('key')),
                     reference: split(getData('reference')),
                     title: split(getData('title')),
-                    logo: split(getData('logo', 'https://dummyimage.com/600x400/0079c6/fff&text=Os')),
+                    logo: split(getData('logoUrl', 'https://dummyimage.com/600x400/0079c6/fff&text=Os')),
                     amount: split(getData('amount')),
                     amountLabel: split(getData('amountLabel', 'Amount (₦)')),
                     email: split(getData('email')),
@@ -431,6 +479,7 @@ function OsLazyPaystackFormBuild() {
                     submit: split(getData('submitBtn', 'Pay Now')),
                     successUrl: split(getData('successUrl')),
                     failUrl: split(getData('failUrl')),
+                    cancelUrl: split(getData('cancelUrl')),
                 };
 
                 const has = (arr, val) => arr.includes(val);
@@ -442,21 +491,21 @@ function OsLazyPaystackFormBuild() {
                     <div class="card OsLazyPaystack-checkout-card shadow p-4">
 
                         <div class="OsLazyPaystack-logo-container ${options.logo.join(' ').match(/c:([^\s]+)/)?.[1]||''}">
-                            <img src="${options.logo[0]}">
+                            <img src="${options.logo[0].trim()}">
                         </div>
 
-                        <h4 class="text-center mb-3 ${options.title.join(' ').match(/c:([^\s]+)/)?.[1]||''}">${options.title[0]}</h4>
+                        <h4 class="text-center mb-3 ${options.title.join(' ').match(/c:([^\s]+)/)?.[1]||''}">${options.title[0].trim()}</h4>
 
-                        <form class="OsLazyPaystackForm needs-validation" data-key="${options.key[0]}" novalidate>
-
+                        <form class="OsLazyPaystackForm needs-validation" data-key="${options.key[0].trim()}" novalidate>
+   <input type="text" name="logoUrl" value="${options.logo[0].trim()}" class="d-none">
                             <!-- Fullname -->
                             <div class="mb-3 ${has(options.fullname, 'hide') ? 'd-none' : ''}">
-                                <label>${options.fullnameLabel[0]}</label>
+                                <label>${options.fullnameLabel[0].trim()}</label>
                                 <input type="text"
                                     class="form-control OsLazyPaystack-fullname ${options.fullname.join(' ').match(/c:([^\s]+)/)?.[1]||''}"
                                     name="fullname"
                                     id="OsLazyPaystack-fullname-${pos}"
-                                    value="${options.fullname[0]}"
+                                    value="${options.fullname[0].trim()}"
                                     ${has(options.fullname, 'required') ? 'required minlength="4"' : ''}
                                     ${has(options.fullname, 'readonly') ? 'readonly' : ''}>
                                 <div class="invalid-feedback">Enter your full name</div>
@@ -464,12 +513,12 @@ function OsLazyPaystackFormBuild() {
 
                             <!-- Email -->
                             <div class="mb-3 ${has(options.email, 'hide') ? 'd-none' : ''}">
-                                <label>${options.emailLabel[0]}</label>
+                                <label>${options.emailLabel[0].trim()}</label>
                                 <input type="email"
                                     class="form-control OsLazyPaystack-email ${options.email.join(' ').match(/c:([^\s]+)/)?.[1]||''}"
                                     name="email"
                                     id="OsLazyPaystack-email-${pos}"
-                                    value="${options.email[0]}"
+                                    value="${options.email[0].trim()}"
                                     required
                                     ${has(options.email, 'readonly') ? 'readonly' : ''}>
                                 <div class="invalid-feedback">Enter a valid email address</div>
@@ -477,14 +526,14 @@ function OsLazyPaystackFormBuild() {
 
                             <!-- Amount -->
                             <div class="mb-3 ${has(options.amount, 'hide') ? 'd-none' : ''}">
-                                <label>${options.amountLabel[0]}</label>
+                                <label>${options.amountLabel[0].trim()}</label>
                                 <input type="number"
                                     class="form-control OsLazyPaystack-amount ${options.amount.join(' ').match(/c:([^\s]+)/)?.[1]||''}"
                                     name="amount"
                                     id="OsLazyPaystack-amount-${pos}"
                                     required
                                     min="50"
-                                    value="${options.amount[0]}"
+                                    value="${(options.amount[0]||'').trim()}"
                                     ${has(options.amount, 'readonly') ? 'readonly' : ''}>
                                 <div class="invalid-feedback">Minimum amount is ₦50</div>
                             </div>
@@ -495,24 +544,22 @@ function OsLazyPaystackFormBuild() {
 
                             <!-- Message -->
                             <div class="mt-3 message text-center"></div>
-      <input class="OsLazyPaystack-reference" name="reference" type="hidden" value="${options.reference[0]}">
-                            <input class="OsLazyPaystack-success-url" type="hidden" value="${options.successUrl[0]}">
-                            <input class="OsLazyPaystack-fail-url" type="hidden" value="${options.failUrl[0]}">
+      <input class="OsLazyPaystack-reference" name="reference" type="hidden" value="${options.reference[0].trim()}">
+                            <input class="OsLazyPaystack-success-url" type="hidden" value="${options.successUrl[0].trim()}">
+                            <input class="OsLazyPaystack-fail-url" type="hidden" value="${options.failUrl[0].trim()}">
+                            <input class="OsLazyPaystack-cancel-url" type="hidden" value="${options.cancelUrl[0].trim()}">
 
                             <!-- Submit -->
-                            <button type="submit" class="btn btn-${options.submit[1] || 'success'} w-100">
+                            <button type="submit" class="btn btn-${(options.submit[1] || 'success').trim()} w-100">
                                 ${options.submit[0]}
                             </button>
-
                         </form>
-                      <div class="text-center mt-3 OsPaystackLocal"><small>Powered by Os Hub | Paystack</small></div>  
+                      <div class="text-center mt-3 OsPaystackLocal"><small>Powered by Os Hub | Paystack</small></div>
                     </div>
                                      
                 </div>
                 `;
-
-     el.innerHTML = osLazyForm;
- 
+     el.innerHTML = osLazyForm; 
        el.classList.add('built');
             } catch (e) {
                 OsToast(e.message);
@@ -582,13 +629,16 @@ function OsToast(message, type = "danger") {
    let __osPLCnt=0;
    let __osPLTimer=null;
    
-    document.querySelector('.OsPaystackLocal').addEventListener('click', function(){
+    const OsPaystackLocalBtn=document.querySelector('.OsPaystackLocal');
+
+if( !OsPaystackLocalBtn) return;  
+OsPaystackLocalBtn.addEventListener('click', function(){
     	if( !location.href.match(/localhost/) ) return;
     
     	__osPLCnt++;
     
     if( __osPLCnt>5){
-    sessionStorage.setItem('OsPaystackLocal', 'http://localhost:8080/paystack/api');
+    sessionStorage.setItem('OsPaystackLocal', 'http://localhost:8000/paystack/api');
     OsToast('Switched');
     
     // reset immediately after success
@@ -639,13 +689,3 @@ observer.observe(document.body, {
   childList: true,
   subtree: true,
 });
-
-/*
-document.addEventListener('payment_close', function (e) {
-	e.detail.reference;
-    OsToast('Payment closed');
-});
-
-payment_success, payment_fail, payment_error
-
-*/
