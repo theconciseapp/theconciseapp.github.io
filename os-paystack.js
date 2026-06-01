@@ -13,8 +13,12 @@ class OsPay {
   async checkout(options) {
     try {
     	
+    if( JSON.stringify(options).length>10000 ){
+    	throw new Error("Metadata too long");
+    }
+    
       if (!options.email) throw new Error("Missing Email");
-      if (+options.amount < 50) throw new Error("Minimum amount is ₦50");
+      if (+options.amount < 150) throw new Error("Minimum amount is ₦150");
 
 let headers={
 	"Content-Type": "application/json"
@@ -111,7 +115,7 @@ if (!allowedOrigins.includes(event.origin)) {
     return;
   }
 
-  const { type, reference } = event.data;
+  const { type, reference, error_message } = event.data;
 
   if (!type) return;
 
@@ -127,11 +131,17 @@ if (!allowedOrigins.includes(event.origin)) {
         break;
 
       case "payment_cancelled":
-        options.onClose?.(reference, "Payment cancelled");
+        options.onClose?.(reference, error_message|| "Payment cancelled");
+   
+        this.emit('osp_payment_closed', { options, reference, error: (error_message||'Payment page closed') } );
         break;
-
+case "payment_error":
+        options.onError?.(reference, error_message||"Payment error occured");
+        this.emit('osp_payment_error', { options, reference, error: (error_message||'Payment error') } );
+        break;
       case "payment_failed":
-        options.onFail?.(reference, "Payment failed");
+        options.onFail?.(reference, error_message|| "Payment failed");
+        this.emit('osp_payment_failed', { options, reference, error: ( error_message||'Payment failed' ) } );
         break;
 
       default:
@@ -142,13 +152,13 @@ if (!allowedOrigins.includes(event.origin)) {
     }
 
   } catch (error) {
-
     console.error(error);
 
-    options.onFail?.(
+    options.onError?.(
       reference,
       error?.message || "An error occurred"
     );
+this.emit('', 'osp_payment_error', { options, reference, error: (error.message||'An error occured') } );
 
   } finally {
 
@@ -167,7 +177,8 @@ window.addEventListener("message", listener);
   // Private: Verified
   async _handleSuccess(reference, options) {
         options.onSuccess && options.onSuccess(reference);
-      } 
+        this.emit('osp_payment_successful', { options, reference} );
+     } 
       
 async verify(ref, callback){     
  const key=this.key;
@@ -188,6 +199,16 @@ async verify(ref, callback){
     	callback(null, err);
     }
   }    
+
+// Custom event emitter (very useful)
+    emit(eventName, detail) {
+      document.dispatchEvent(new CustomEvent(eventName, {
+            detail,
+            bubbles: true
+        }));
+    }
+    
+
 
 async isReallyOnline() {
   const controller = new AbortController();
@@ -212,9 +233,8 @@ if (!res.ok) { // 404, 500, etc.
     return true;
   } catch {
     return false;
-  }
-}
-  
+    }
+  } 
 }
 
 
@@ -247,8 +267,7 @@ document.addEventListener('input', (e) => {
         e.target.value = value;
     }
 });
-        
-        
+               
     }
 
     handleSubmit(form) {
@@ -257,8 +276,8 @@ document.addEventListener('input', (e) => {
             return;
         }
 
-  if( typeof lazyCustomValidate==='function'){
-  	const valid=lazyCustomValidate(form);
+  if( typeof OsLazyCustomValidate==='function'){
+  	const valid=OsLazyCustomValidate(form);
   if( !valid) return;
   }
 
@@ -275,6 +294,7 @@ document.addEventListener('input', (e) => {
         try {
         	const logoUrl = metadata.logoUrl || '';
         	const custom_reference = metadata.reference || '';
+        const webhookUrl = form.querySelector('.OsLazyPaystack-webhook-url').value;
             const email = metadata.email || '';
             const amount = Number(metadata.amount || 0);
 
@@ -283,14 +303,15 @@ document.addEventListener('input', (e) => {
                 return;
             }
 
-            if (amount < 50) {
-                this.fail(form, "Amount must be at least ₦50", btn);
+            if (amount < 150) {
+                this.fail(form, "Amount must be at least ₦150", btn);
                 return;
             }
 
             delete metadata.email;
             delete metadata.amount;
             delete metadata.reference;
+            delete metadata.webhookUrl;
             
             const key = form.dataset.key || '';
 
@@ -300,41 +321,39 @@ document.addEventListener('input', (e) => {
                 email,
                 amount,
                 reference: custom_reference,
+                webhook_url: webhookUrl,
                 metadata,
-                onClose: (reference, message) => {
-                    this.emit(form, 'payment_close', {form, reference} );
-                    const cUrl= form.querySelector('.OsLazyPaystack-cancel-url').value;
+                onClose: (reference, message) => {                  this.showMessage(form, 'Payment closed', 'info');
+                    const cUrl= this.formatCallbackUrl( form.querySelector('.OsLazyPaystack-cancel-url').value, reference, 'cancelled');
+
            if( cUrl) {
-     location.href=cUrl + "?reference=" + reference;
+     location.href=cUrl;
            return
            }
-                    
-                   this.showMessage(form, 'Payment closed', 'info');
-                },
+   },
       onSuccess: (reference) => {
-                this.emit(form, 'payment_success', {form, reference});
-           const sUrl= form.querySelector('.OsLazyPaystack-success-url').value;
-           if( sUrl) {
-     location.href=sUrl + "?reference=" + reference;
-           return
-           }
+      	this.showMessage(form, 'Payment successful', 'success');         
+      
+           const sUrl=  this.formatCallbackUrl( form.querySelector('.OsLazyPaystack-success-url').value, reference, 'success');
            
-this.showMessage(form, 'Payment successful', 'success');            
+        if( sUrl)  {
+     location.href=sUrl;
+           return;
+          }           
     },
 
-                onFail: (reference, msg) => {
-              this.emit(form, 'payment_fail', { form, reference, msg });
-                const fUrl= form.querySelector('.OsLazyPaystack-fail-url').value;
+   onFail: (reference, msg) => {
+   	this.showMessage(form, msg, 'info');
+               
+ const fUrl= this.formatCallbackUrl( form.querySelector('.OsLazyPaystack-fail-url').value, reference, 'fail');
+ 
            if( fUrl) {
-     location.href=fUrl + "?" + reference;
+     location.href=fUrl;
            return
            }
-          
-     this.showMessage(form, msg, 'info');
 },
                onError: (error) => {
                     this.showMessage(form,error.message);
-                    this.emit(form, 'payment_error', {form, error});
                 },
                 always: () => {
                     this.cleanup(false, btn);
@@ -348,7 +367,17 @@ this.showMessage(form, 'Payment successful', 'success');
         }
     }
 
-    fail(form, message, btn) {
+formatCallbackUrl(callbackUrl, reference='', extra=''){
+   	if( !callbackUrl) return false;
+   
+    const url = new URL(callbackUrl, window.location.origin);
+    url.searchParams.set('reference', reference);
+ if( extra)   url.searchParams.set('osp_status', extra);
+         
+     return url.toString();
+   }
+
+ fail(form, message, btn) {
         this.showMessage(form, message);
         this.cleanup(false, btn);
     }
@@ -369,7 +398,7 @@ this.showMessage(form, 'Payment successful', 'success');
     if (status >= 500) {
       message = "Server error. Please try again later.";
     } else if (status === 404) {
-      message = "Service not found.";
+      message = "Page not found.";
     } else if (status === 401 || status === 403) {
       message = "Unauthorized request.";
     } else if (status === 400) {
@@ -392,16 +421,6 @@ this.showMessage(form, 'Payment successful', 'success');
         }
         if (btn) btn.disabled = false;      
     }
-
-    // Custom event emitter (very useful)
-    emit(form, eventName, detail) {
-        form.dispatchEvent(new CustomEvent(eventName, {
-            detail,
-            bubbles: true
-        }));
-    }
-    
-
 
     loadBootstrapCSS() {
     // prevent duplicate loading
@@ -480,6 +499,7 @@ function OsLazyPaystackFormBuild() {
                     successUrl: split(getData('successUrl')),
                     failUrl: split(getData('failUrl')),
                     cancelUrl: split(getData('cancelUrl')),
+                    webhookUrl: split(getData('webhookUrl')),
                 };
 
                 const has = (arr, val) => arr.includes(val);
@@ -532,12 +552,12 @@ function OsLazyPaystackFormBuild() {
                                     name="amount"
                                     id="OsLazyPaystack-amount-${pos}"
                                     required
-                                    min="50"
+                                    min="${options.amount[1]||150}"
                                     value="${(options.amount[0]||'').trim()}"
                                     ${has(options.amount, 'readonly') ? 'readonly' : ''}>
-                                <div class="invalid-feedback">Minimum amount is ₦50</div>
+                                <div class="invalid-feedback">Minimum amount is ₦${options.amount[1]||'150'}</div>
                             </div>
-
+ 
                             <div class="mb-3">
                                 ${customFields}
                             </div>
@@ -548,6 +568,7 @@ function OsLazyPaystackFormBuild() {
                             <input class="OsLazyPaystack-success-url" type="hidden" value="${options.successUrl[0].trim()}">
                             <input class="OsLazyPaystack-fail-url" type="hidden" value="${options.failUrl[0].trim()}">
                             <input class="OsLazyPaystack-cancel-url" type="hidden" value="${options.cancelUrl[0].trim()}">
+                            <input class="OsLazyPaystack-webhook-url" type="hidden" value="${options.webhookUrl[0].trim()}">
 
                             <!-- Submit -->
                             <button type="submit" class="btn btn-${(options.submit[1] || 'success').trim()} w-100">
