@@ -2,6 +2,8 @@ class OsPay {
   constructor(key) {
   	
     if (!key) throw new Error("Missing API key");
+    
+
     this.key = key;
     this.baseUrl = sessionStorage.getItem('OsPaystackLocal')||"https://www.oshobby.com.ng/paystack/api";
   }
@@ -706,7 +708,9 @@ const observer = new MutationObserver((mutations) => {
   });
 });
 
-observer.observe(document.body, {
-  childList: true,
-  subtree: true,
+document.addEventListener('DOMContentLoaded', () => {
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
 });
