@@ -1,3 +1,4 @@
+alert(2)
 class OsPay {
   constructor(key) {
   	
