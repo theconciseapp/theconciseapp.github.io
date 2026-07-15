@@ -1,4 +1,3 @@
-alert(2)
 class OsPay {
   constructor(key) {
   	
@@ -108,6 +107,7 @@ const listener = async (event) => {
   const allowedOrigins = [
  this.baseUrl.replace('/paystack/api','')
 ];
+	alert(allowedOrigins)
 alert( event.origin)
 if (!allowedOrigins.includes(event.origin)) {
   return;
