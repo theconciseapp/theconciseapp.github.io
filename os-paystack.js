@@ -105,10 +105,11 @@ const listener = async (event) => {
 
   // Validate origin
   const allowedOrigins = [
- this.baseUrl.replace('/paystack/api','')
+ this.baseUrl.replace('/paystack/api',''),
+ this.baseUrl.replace('/api','')
+
 ];
-	alert(allowedOrigins)
-alert( event.origin)
+	
 if (!allowedOrigins.includes(event.origin)) {
   return;
 }
