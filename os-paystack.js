@@ -107,7 +107,7 @@ const listener = async (event) => {
   const allowedOrigins = [
  this.baseUrl.replace('/paystack/api','')
 ];
-
+alert( event.origin)
 if (!allowedOrigins.includes(event.origin)) {
   return;
 }
