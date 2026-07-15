@@ -5,7 +5,7 @@ class OsPay {
     
 
     this.key = key;
-    this.baseUrl = sessionStorage.getItem('OsPaystackLocal')||"https://www.oshobby.com.ng/paystack/api";
+    this.baseUrl = sessionStorage.getItem('OsPaystackLocal')||"https://paystack.oshobby.com.ng/api";
   }
 
    toast( msg, type='danger'){
