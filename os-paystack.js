@@ -109,7 +109,6 @@ options.token=this.key;
   },
     onSuccess: (transaction) => {
     // Handle successful payment here, e.g., redirect or verify reference
-    alert (JSON.stringify (transaction))
     options.onSuccess && options.onSuccess(reference, transaction );
         this.emit('osp_payment_successful', { options, reference, data: transaction } );
     
