@@ -109,6 +109,9 @@ const listener = async (event) => {
  this.baseUrl.replace('/api','')
 
 ];
+
+	alert(JSON.stringify (allowedOrigins) + '\n' + event.origin)
+
 	
 if (!allowedOrigins.includes(event.origin)) {
   return;
