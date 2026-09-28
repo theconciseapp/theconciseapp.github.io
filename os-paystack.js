@@ -1,21 +1,61 @@
 class OsPay {
-  constructor(key) {
-  	
-    if (!key) throw new Error("Missing API key");
-    
 
-    this.key = key;
-    this.baseUrl = sessionStorage.getItem('OsPaystackLocal')||"https://paystack.oshobby.com.ng/api";
-  }
+    constructor(key) {
+        if (!key) throw new Error("Missing API key");
 
-   toast( msg, type='danger'){
-      	OsToast(msg, type);
-   }
-  // Main checkout function
-  async checkout(options) {
-    try {
-    	
-    if( JSON.stringify(options).length>10000 ){
+        this.key = key;
+        this.baseUrl = sessionStorage.getItem('OsPaystackLocal')||"https://paystack.oshobby.com.ng/api";
+        
+        this.paystack = null;
+    }
+
+    toast(msg, type = 'danger') {
+        OsToast(msg, type);
+    }
+
+    async loadPaystack() {
+
+        if (window.PaystackPop) {
+            return this.paystack || (this.paystack = new PaystackPop());
+        }
+
+        if (!OsPay.loading) {
+            OsPay.loading = new Promise((resolve, reject) => {
+
+                const script = document.createElement('script');
+
+                script.src = 'https://js.paystack.co/v2/inline.js';
+                script.async = true;
+
+                script.onload = () => {
+                    if (!window.PaystackPop) {
+                        reject(new Error(
+                            'Paystack InlineJS V2 did not load correctly'
+                        ));
+                        return;
+                    }
+
+                    resolve();
+                };
+
+                script.onerror = () => reject(
+                    new Error('Unable to load Paystack InlineJS V2')
+                );
+
+                document.head.appendChild(script);
+            });
+        }
+
+        await OsPay.loading;
+
+        return this.paystack || (this.paystack = new PaystackPop());
+    }
+
+    async checkout(options) {
+        try {
+            const paystack = await this.loadPaystack();
+
+            if( JSON.stringify(options).length>10000 ){
     	throw new Error("Metadata too long");
     }
     
@@ -28,170 +68,82 @@ let headers={
 
 options.token=this.key;
 
- /*
-if( location.href.startsWith('https') ){
-	headers["Authorization"]=`Bearer ${this.key}`
-headers["X-Auth-Token"] =this.key
-   }else{
-   	options.token=this.key;
-}
-*/
-
  options.domain=location.href;
  
  if (!navigator.onLine) {
  throw new Error("You're offline. Check your internet connection.");
 }
 
-      const res = await fetch(`${this.baseUrl}/initialize`, {
+      const response = await fetch(`${this.baseUrl}/initialize`, {
         method: "POST",
         headers: headers,
         body: JSON.stringify(options)
       });
 
-      const result = await res.json();
-      
-      if (result.success || result.status) {
-        const data = result.data;
+     
+            if (!response.ok) {
+                throw new Error('Unable to initialize payment');
+            }
 
-        // Open iframe for payment
-        this._openIframe(data.authorization_url, options);
-        return;
-      }
+            const result = await response.json();
+        
+ if (!result.success) {
+                throw new Error(
+                    result.message || 'Payment initialization failed'
+                );
+            }
+  const data = result.data;
+        
+    if (!data.access_code) {
+                throw new Error(
+                    'Paystack access code was not returned'
+                );
+            }
 
-    throw new Error(result.message||"Unknown error");
+  const reference = data.reference;
+  
+  paystack.resumeTransaction( data.access_code, {
+  onLoad: (response ) => {
+  	options.onLoad ?.(reference, response )
+        this.emit('osp_payment_loaded', { options, reference, data: response} );   
+  },
+    onSuccess: (transaction) => {
+    // Handle successful payment here, e.g., redirect or verify reference
+    alert (JSON.stringify (transaction))
+    options.onSuccess && options.onSuccess(reference, transaction );
+        this.emit('osp_payment_successful', { options, reference, data: transaction } );
+    
+  },
+  onCancel: () => {
+  options.onClose ? options.onClose(reference , 'Payment cancelled' ) : OsToast('Payment cancelled');
+  
+        this.emit('osp_payment_closed', { options, reference, error: 'Payment cancelled' } );  
+  },
+  onError: (error) => {
+  	//error is an object from paystack 
+  	options.onFail ? options.onFail(reference, error.message) : OsToast(error.message);
+        this.emit('osp_payment_failed', { options, reference, error: ( error.message||'Payment failed') } );   
+  }
+});
 
-    } catch (err) {
-      options.onError ? options.onError(err) : OsToast(err.message);
+  return result;
+
+        } catch (error) {
+
+options.onError ? options.onError( '', error.message) : OsToast(error.message);
+
+this.emit('osp_payment_error', { options, reference: '', error: ( error.message|| 'An error occured') } );
+
+            throw error;  
     } finally{
-    	options.always && options.always();
+    	options.always && options.always(options);
     }
   }
 
-  // Private: Open payment in iframe
-  _openIframe(url, options) {
-    // Create overlay
-    const overlay = document.createElement("div");
-    overlay.style = `
-      position: fixed;
-      top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(0,0,0,0.6);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      z-index: 9999;
-    `;
-
-    // Create iframe
-    const iframe = document.createElement("iframe");
-    iframe.src = url;
-    iframe.style = `
-      width: 500px;
-      height: 600px;
-      border: none;
-      border-radius: 8px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-    `;
-    overlay.appendChild(iframe);
-    document.body.appendChild(overlay);
-
-  // ✅ Call onLoad once iframe fully loads
-  iframe.onload = () => {
-    options.onLoad && options.onLoad(iframe);
-  };
-    
-    // Listen for postMessage events from iframe
-const listener = async (event) => {
-
-  // Validate origin
-  const allowedOrigins = [
- this.baseUrl.replace('/paystack/api',''),
- this.baseUrl.replace('/api','')
-
-];
-
-	alert(JSON.stringify (allowedOrigins) + '\n' + event.origin)
-
-	
-if (!allowedOrigins.includes(event.origin)) {
-  return;
-}
-
-  // Ensure data is object
-  if (!event.data || typeof event.data !== "object") {
-    return;
-  }
-
-  const { type, reference, error_message } = event.data;
-
-  if (!type) return;
-
-  // Prevent duplicate events immediately
-  window.removeEventListener("message", listener);
-
-  try {
-
-    switch (type) {
-
-      case "payment_successful":
-        await this._handleSuccess(reference, options);
-        break;
-
-      case "payment_cancelled":
-        options.onClose?.(reference, error_message|| "Payment cancelled");
-   
-        this.emit('osp_payment_closed', { options, reference, error: (error_message||'Payment page closed') } );
-        break;
-case "payment_error":
-        options.onError?.(reference, error_message||"Payment error occured");
-        this.emit('osp_payment_error', { options, reference, error: (error_message||'Payment error') } );
-        break;
-      case "payment_failed":
-        options.onFail?.(reference, error_message|| "Payment failed");
-        this.emit('osp_payment_failed', { options, reference, error: ( error_message||'Payment failed' ) } );
-        break;
-
-      default:
-        OsToast(
-          "Unknown event from iframe",
-          JSON.stringify(event.data)
-        );
-    }
-
-  } catch (error) {
-    console.error(error);
-
-    options.onError?.(
-      reference,
-      error?.message || "An error occurred"
-    );
-this.emit('', 'osp_payment_error', { options, reference, error: (error.message||'An error occured') } );
-
-  } finally {
-
-    // Safely remove overlay
-    if (overlay && overlay.parentNode) {
-      overlay.parentNode.removeChild(overlay);
-    }
-
-  }
-};
-
-window.addEventListener("message", listener);
-}
-    
-
-  // Private: Verified
-  async _handleSuccess(reference, options) {
-        options.onSuccess && options.onSuccess(reference);
-        this.emit('osp_payment_successful', { options, reference} );
-     } 
-      
-async verify(ref, callback){     
- const key=this.key;
-	
+async verify(reference , callback){     
+ const key=this.key;	
 	try{
-    const res = await fetch(`${this.baseUrl}/verify?reference=${ref}`, {
+    const res = await fetch(`${this.baseUrl}/verify?reference=${reference}`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json"
@@ -207,17 +159,15 @@ async verify(ref, callback){
     }
   }    
 
-// Custom event emitter (very useful)
-    emit(eventName, detail) {
+    
+   emit(eventName, detail) {
       document.dispatchEvent(new CustomEvent(eventName, {
             detail,
             bubbles: true
         }));
     }
     
-
-
-async isReallyOnline() {
+ async isReallyOnline() {
   const controller = new AbortController();
 
   const timeout = setTimeout(() => {
@@ -242,7 +192,11 @@ if (!res.ok) { // 404, 500, etc.
     return false;
     }
   } 
+   
+    
+    
 }
+
 
 
 class OsLazyPaystackForm {
@@ -359,10 +313,10 @@ document.addEventListener('input', (e) => {
            return
            }
 },
-               onError: (error) => {
-                    this.showMessage(form,error.message);
+  onError: (reference , error) => {
+        this.showMessage(form,error);
                 },
-                always: () => {
+  always: () => {
                     this.cleanup(false, btn);
                 }
             });
@@ -390,11 +344,12 @@ formatCallbackUrl(callbackUrl, reference='', extra=''){
     }
 
  showMessage(form, msg, type="danger"){
- 	let message = msg;
+    msg=msg||'Failed'
+	let message = msg;
  
  try{
  	
-  if (msg.startsWith('TypeError')) {
+  if ( msg.startsWith('TypeError')) {
     // Network-level error
     message = "Unable to connect. Check your internet or try again.";
   }
@@ -598,6 +553,7 @@ function OsLazyPaystackFormBuild() {
 }
 
 
+
 function OsToast(message, type = "danger") {
     let bg = "#d32f2f"; // danger (red)
 
@@ -650,7 +606,7 @@ function OsToast(message, type = "danger") {
 
 (function () {
   function boot() {
-    new OsLazyPaystackForm();
+   new OsLazyPaystackForm();
     
     sessionStorage.removeItem('OsPaystackLocal');
    
